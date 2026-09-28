@@ -1695,7 +1695,7 @@ Rules:
 
 - project config and lockfiles inform the rebuild hint
 - never delete a symlink target
-- never remove Git-tracked files or nested version-control metadata inside an artifact
+- never remove Git-tracked files (including case-only path differences on case-insensitive filesystems) or nested version-control metadata inside an artifact
 - unknown Git tracking state blocks artifact cleanup
 - never cross a mount boundary
 - never delete artifacts in an active worktree

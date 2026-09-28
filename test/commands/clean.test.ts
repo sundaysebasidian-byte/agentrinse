@@ -220,7 +220,7 @@ describe("clean closeout profile", () => {
       yes: true,
       json: false,
       dependencies: {
-        platform: "linux",
+        platform: process.platform,
         now: () => NOW,
         runCommand: run,
       },
@@ -346,7 +346,7 @@ describe("clean fleet profile", () => {
       yes: true,
       json: true,
       dependencies: {
-        platform: "linux",
+        platform: process.platform,
         now: () => new Date(),
         runCommand: run,
       },

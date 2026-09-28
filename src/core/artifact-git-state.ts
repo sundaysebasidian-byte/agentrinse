@@ -57,7 +57,7 @@ export async function inspectArtifactGitState(
   try {
     const result = await execFileAsync(
       "git",
-      ["--literal-pathspecs", "-C", projectRoot, "ls-files", "--cached", "-z", "--", name],
+      ["-C", projectRoot, "ls-files", "--cached", "-z", "--", `:(literal,icase)${name}`],
       { encoding: "utf8", env, maxBuffer: 1024 * 1024, timeout: 10_000 },
     );
     return result.stdout === "" ? { status: "clear" } : { status: "tracked" };
