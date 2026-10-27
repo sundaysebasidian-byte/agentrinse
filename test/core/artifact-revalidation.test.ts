@@ -72,14 +72,14 @@ describe("revalidateArtifactRemove", () => {
     const value = await fixture();
     await writeFile(join(value.target, "changed.txt"), "changed");
 
-    const outcome = await revalidateArtifactRemove(value.action, value.home, value.config, {
+    const result = await revalidateArtifactRemove(value.action, value.home, value.config, {
       cwd: value.project,
       processProbe: async () => ({ status: "idle", matches: [] }),
     });
-    expect(outcome.status).toBe("stale");
+    expect(result.status).toBe("stale");
     // Some filesystems bump directory mtime (identity); others only change content fingerprint.
     expect(["ARTIFACT_IDENTITY_CHANGED", "ARTIFACT_CONTENT_CHANGED"]).toContain(
-      outcome.status === "stale" ? outcome.diagnostic.code : undefined,
+      result.status === "stale" ? result.diagnostic.code : undefined,
     );
   });
 
