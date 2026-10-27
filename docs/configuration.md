@@ -45,7 +45,9 @@ An explicitly requested missing or invalid file is an error.
   },
   "audit": {
     "maxEntries": 100000,
-    "measureBytes": true
+    "measureBytes": true,
+    "gitTimeoutMs": 10000,
+    "processOwnershipTimeoutMs": 10000
   },
   "artifacts": {
     "projects": [
@@ -80,6 +82,12 @@ An explicitly requested missing or invalid file is an error.
 Unknown keys are discarded by the current schema. Project roots must be
 unique absolute paths. Cleanup targets from different project entries may not
 overlap.
+
+`gitTimeoutMs` bounds each Git audit/discovery command, including fleet and
+closeout discovery. `processOwnershipTimeoutMs` bounds each macOS `lsof` probe
+created for an audit. Both default to 10 seconds and are capped at 120 seconds;
+a timeout remains unknown, not permission to act. These are per-command limits,
+not a total fleet deadline. Mutation-time revalidation retains its own defaults.
 
 ## Pins
 

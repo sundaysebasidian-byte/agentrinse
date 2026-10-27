@@ -31,7 +31,8 @@ const execFileAsync = promisify(execFile);
 export type GitRunner = (args: string[]) => Promise<string>;
 export type GitPathExists = (path: string) => Promise<boolean>;
 export type GitProcessProbe = (path: string) => Promise<ProcessOwnershipResult>;
-export type GitWorktreeOptions = AgentRinseConfig["audit"] &
+export type GitWorktreeOptions = Pick<AgentRinseConfig["audit"], "maxEntries" | "measureBytes"> &
+  Partial<Pick<AgentRinseConfig["audit"], "gitTimeoutMs">> &
   AgentRinseConfig["worktrees"] & {
     platform: NodeJS.Platform;
   };
@@ -49,16 +50,17 @@ export type GitWorktreeDependencies = {
 const DEFAULT_OPTIONS: GitWorktreeOptions = {
   maxEntries: 100_000,
   measureBytes: true,
+  gitTimeoutMs: 10_000,
   minAgeMinutes: 14 * 24 * 60,
   quarantineTtlMinutes: 7 * 24 * 60,
   platform: process.platform,
 };
 
-async function defaultGitRunner(args: string[]): Promise<string> {
+export async function defaultGitRunner(args: string[], timeoutMs = 10_000): Promise<string> {
   const result = await execFileAsync("git", args, {
     encoding: "utf8",
     maxBuffer: 4 * 1024 * 1024,
-    timeout: 10_000,
+    timeout: timeoutMs,
   });
   return result.stdout;
 }
@@ -104,16 +106,19 @@ function upstreamRef(upstream: string | undefined): string | undefined {
 
 export class GitWorktreeAuditAdapter implements AuditAdapter {
   readonly id = "git";
+  private readonly runGit: GitRunner;
 
   constructor(
     private readonly root: string | undefined,
-    private readonly runGit: GitRunner = defaultGitRunner,
+    runGit: GitRunner | undefined = undefined,
     private readonly pathExists: GitPathExists = defaultPathExists,
     private readonly processProbe: GitProcessProbe = (path) => findProcessesUsingPath(path),
     private readonly reachability?: ReachabilityIndex,
     private readonly options: GitWorktreeOptions = DEFAULT_OPTIONS,
     private readonly dependencies: GitWorktreeDependencies = {},
-  ) {}
+  ) {
+    this.runGit = runGit ?? ((args) => defaultGitRunner(args, this.options.gitTimeoutMs ?? 10_000));
+  }
 
   async probe(_context: AuditContext): Promise<AdapterProbe> {
     if (this.root === undefined) {
@@ -240,6 +245,7 @@ export class GitWorktreeAuditAdapter implements AuditAdapter {
         status: "unknown",
         matches: [],
         reason: "worktree does not exist",
+        scope: "path",
       };
 
       if (exists) {

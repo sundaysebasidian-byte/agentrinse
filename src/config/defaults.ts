@@ -17,6 +17,8 @@ export const DEFAULT_CONFIG: AgentRinseConfig = {
   audit: {
     maxEntries: 100_000,
     measureBytes: true,
+    gitTimeoutMs: 10_000,
+    processOwnershipTimeoutMs: 10_000,
   },
   artifacts: {
     projects: [],

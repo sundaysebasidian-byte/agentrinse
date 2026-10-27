@@ -37,7 +37,11 @@ type CleanCommandBaseOptions = {
   dependencies?: {
     platform?: NodeJS.Platform;
     now?: () => Date;
-    runCommand?: (command: string, args: string[]) => Promise<{ stdout: string; stderr: string }>;
+    runCommand?: (
+      command: string,
+      args: string[],
+      timeoutMs?: number,
+    ) => Promise<{ stdout: string; stderr: string }>;
   };
 };
 
@@ -138,11 +142,12 @@ export function cleanCommandStatus(
 async function defaultRunCommand(
   command: string,
   args: string[],
+  timeoutMs = 10_000,
 ): Promise<{ stdout: string; stderr: string }> {
   const result = await execFileAsync(command, args, {
     encoding: "utf8",
     maxBuffer: 4 * 1024 * 1024,
-    timeout: 10_000,
+    timeout: timeoutMs,
   });
   return { stdout: result.stdout, stderr: result.stderr };
 }
@@ -174,7 +179,12 @@ function scopedConfig(
 
 async function fleetRepositories(
   repos: readonly string[],
-  runCommand: (command: string, args: string[]) => Promise<{ stdout: string; stderr: string }>,
+  runCommand: (
+    command: string,
+    args: string[],
+    timeoutMs?: number,
+  ) => Promise<{ stdout: string; stderr: string }>,
+  timeoutMs: number,
 ): Promise<{ repositories: FleetRepository[]; worktrees: string[] }> {
   if (repos.some((repo) => !isAbsolute(repo))) {
     throw new Error("clean --profile fleet requires absolute --repo paths");
@@ -198,13 +208,11 @@ async function fleetRepositories(
     let commonDir: string;
     try {
       const commonOutput = (
-        await runCommand("git", [
-          "-C",
-          repo,
-          "rev-parse",
-          "--path-format=absolute",
-          "--git-common-dir",
-        ])
+        await runCommand(
+          "git",
+          ["-C", repo, "rev-parse", "--path-format=absolute", "--git-common-dir"],
+          timeoutMs,
+        )
       ).stdout.trim();
       commonDir = await realpath(commonOutput);
     } catch (error) {
@@ -216,7 +224,7 @@ async function fleetRepositories(
     }
     try {
       const output = (
-        await runCommand("git", ["-C", repo, "worktree", "list", "--porcelain", "-z"])
+        await runCommand("git", ["-C", repo, "worktree", "list", "--porcelain", "-z"], timeoutMs)
       ).stdout;
       valid.set(commonDir, {
         root: repo,
@@ -385,10 +393,17 @@ export async function executeCleanCommand(
       throw new Error("clean --profile fleet supports only --max-risk safe or recoverable");
     }
   }
-  const runCommand = options.dependencies?.runCommand ?? defaultRunCommand;
   const platform = options.dependencies?.platform ?? process.platform;
   const clock = options.dependencies?.now ?? (() => new Date());
   const home = resolve(options.home);
+  if (options.profile === "fleet" && options.repos.some((repo) => !isAbsolute(repo))) {
+    throw new Error("clean --profile fleet requires absolute --repo paths");
+  }
+  const { config } = await loadConfigForHome(home, options.config);
+  const runCommand =
+    options.dependencies?.runCommand ??
+    ((command: string, args: string[], timeoutMs?: number) =>
+      defaultRunCommand(command, args, timeoutMs));
   let repositories: FleetRepository[];
   let worktrees: string[];
   let currentWorktree: string | undefined;
@@ -396,23 +411,30 @@ export async function executeCleanCommand(
   if (options.profile === "closeout") {
     const cwd = resolve(options.cwd ?? process.cwd());
     currentWorktree = (
-      await runCommand("git", ["-C", cwd, "rev-parse", "--show-toplevel"])
+      await runCommand(
+        "git",
+        ["-C", cwd, "rev-parse", "--show-toplevel"],
+        config.audit.gitTimeoutMs,
+      )
     ).stdout.trim();
     if (currentWorktree === "") {
       throw new Error("closeout requires a Git worktree");
     }
     const worktreeOutput = (
-      await runCommand("git", ["-C", currentWorktree, "worktree", "list", "--porcelain", "-z"])
+      await runCommand(
+        "git",
+        ["-C", currentWorktree, "worktree", "list", "--porcelain", "-z"],
+        config.audit.gitTimeoutMs,
+      )
     ).stdout;
     worktrees = parseWorktreePorcelain(worktreeOutput).map((record) => resolve(record.path));
     repositoryRoot = worktrees[0] ?? currentWorktree;
     repositories = [{ root: currentWorktree }];
   } else {
-    const fleet = await fleetRepositories(options.repos, runCommand);
+    const fleet = await fleetRepositories(options.repos, runCommand, config.audit.gitTimeoutMs);
     repositories = fleet.repositories;
     worktrees = fleet.worktrees;
   }
-  const { config } = await loadConfigForHome(home, options.config);
   const maxRisk =
     options.maxRisk === undefined ? undefined : actionRiskSchema.parse(options.maxRisk);
   const scoped = scopedConfig(config, repositories[0]!.root!, worktrees, maxRisk);

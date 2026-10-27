@@ -82,6 +82,8 @@ function fixtureConfig(projects: { root: string; names: ["node_modules"] }[]) {
     audit: {
       maxEntries: 100,
       measureBytes: true,
+      gitTimeoutMs: 10_000,
+      processOwnershipTimeoutMs: 10_000,
     },
     artifacts: {
       projects,
@@ -324,6 +326,39 @@ describe("clean fleet profile", () => {
     await expect(access(join(value.stateDir, "runs"))).rejects.toMatchObject({
       code: "ENOENT",
     });
+  }, 30_000);
+
+  it("passes the configured bounded Git budget to fleet discovery", async () => {
+    const value = await gitFixture();
+    const config = fixtureConfig([]);
+    config.audit.gitTimeoutMs = 12_345;
+    await writeJsonAtomic(value.configPath, config);
+    const timeouts: number[] = [];
+
+    await executeCleanCommand({
+      home: value.home,
+      config: value.configPath,
+      stateDir: value.stateDir,
+      profile: "fleet",
+      repos: [value.linked, value.main],
+      maxRisk: "safe",
+      apply: false,
+      yes: false,
+      json: true,
+      dependencies: {
+        platform: "linux",
+        now: () => new Date(),
+        runCommand: async (command, args, timeoutMs) => {
+          if (command === "git") {
+            timeouts.push(timeoutMs ?? 0);
+          }
+          return run(command, args);
+        },
+      },
+    });
+
+    expect(timeouts.length).toBeGreaterThan(0);
+    expect(timeouts.every((timeoutMs) => timeoutMs === 12_345)).toBe(true);
   }, 30_000);
 
   it("applies safe artifacts and recoverable worktrees only at that ceiling", async () => {

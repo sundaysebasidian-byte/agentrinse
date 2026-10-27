@@ -81,6 +81,8 @@ describe("loadConfig", () => {
     expect(config.audit).toEqual({
       maxEntries: 100_000,
       measureBytes: false,
+      gitTimeoutMs: 10_000,
+      processOwnershipTimeoutMs: 10_000,
     });
     expect(config.artifacts.projects).toEqual([
       {
@@ -99,6 +101,20 @@ describe("loadConfig", () => {
       { resourceId: "git:git-worktree:fixture" },
       { gitRef: "refs/heads/release", expiresAt: "2026-08-01T00:00:00.000Z" },
     ]);
+  });
+
+  it("rejects unbounded audit command budgets", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agentrinse-config-"));
+    const path = join(root, "config.json");
+    await writeFile(
+      path,
+      JSON.stringify({
+        schemaVersion: 1,
+        audit: { gitTimeoutMs: 120_001 },
+      }),
+    );
+
+    await expect(loadConfig(path)).rejects.toThrow();
   });
 
   it("rejects relative artifact roots", async () => {
